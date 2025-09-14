@@ -571,18 +571,12 @@ function OperatorPanels() {
             >
               {log}
             </Box>
-            <Text fontSize="xs" color="gray.500" mt={2}>
-              Tip: Copy JSON from here when reporting issues to the vendor.
-            </Text>
+
           </CardBody>
         </Card>
       )}
       <Box borderTopWidth="1px" borderColor="gray.200" />
-      <Text fontSize="xs" color="gray.500">
-        Note: In real rentals, devices stay <b>REGISTER</b> (bound). Customer
-        flow will use lock/unlock + order APIs when provided by vendor.
-        Bind/Unbind here are for installation.
-      </Text>
+      
     </VStack>
   );
 }
