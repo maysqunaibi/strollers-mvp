@@ -135,6 +135,47 @@ export function removeSite({ siteNo }) {
   return request("POST", `/site/remove`, { siteNo });
 }
 
+/** ---------------------------
+ * HandCart (stroller) helpers
+ * ---------------------------
+ */
+
+/** Get carts (strollers) currently in a device (rack).
+ * @param {Object} params
+ * @param {string} params.deviceNo - e.g. "01007008"
+ */
+export function getCartList({ deviceNo }) {
+  return request("POST", `/handcart/list`, { deviceNo });
+}
+
+/** Unlock a specific slot (cartIndex) on a device after payment.
+ * @param {Object} params
+ * @param {string} params.deviceNo
+ * @param {number} params.cartIndex - slot index (1,2,3…)
+ */
+export function unlockCart({ deviceNo, cartIndex, cartNo }) {
+  return request("POST", `/handcart/unlock`, { deviceNo, cartIndex, cartNo });
+}
+
+/** Bind carts (IC card numbers) to this merchant (one-time association).
+ * Accepts either a single string or an array.
+ * @param {Object} params
+ * @param {string|string[]} params.cartNo - IC card number(s)
+ */
+export function bindCarts({ cartNo }) {
+  // const list = Array.isArray(cartNos) ? cartNos : [cartNos].filter(Boolean);
+  return request("POST", `/handcart/bind`, { cartNo });
+}
+
+/** Unbind carts from this merchant.
+ * Accepts either a single string or an array.
+ * @param {Object} params
+ * @param {string|string[]} params.cartNo - IC card number(s)
+ */
+export function unbindCarts({ cartNo }) {
+  const list = Array.isArray(cartNo) ? cartNo : [cartNo].filter(Boolean);
+  return request("POST", `/handcart/unbind`, { cartNo: list });
+}
 /* ------------------------------ Re-exports ------------------------------ */
 export default {
   API_BASE,
@@ -152,4 +193,8 @@ export default {
   listSites,
   updateSite,
   removeSite,
+  unbindCarts,
+  bindCarts,
+  unlockCart,
+  getCartList,
 };

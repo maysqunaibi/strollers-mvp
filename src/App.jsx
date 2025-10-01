@@ -19,6 +19,10 @@ import {
   Wrap,
   WrapItem,
   useToast,
+  Textarea,
+  Image,
+  Badge,
+  Tooltip,
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import {
@@ -55,8 +59,14 @@ import {
   listSites,
   updateSite,
   removeSite,
+  getCartList,
+  unlockCart,
+  bindCarts,
+  unbindCarts,
 } from "./lib/api";
 import CustomerPanels from "./components/CustomerPanels";
+import freeLoc from "./assets/sublocation-free.webp";
+import registeredLoc from "./assets/sublocation-registered.webp";
 
 const MotionCard = motion(Card);
 
@@ -104,22 +114,45 @@ function Field({ label, children }) {
   );
 }
 
-function SlotPill({ s, onClick }) {
-  const tone = s.status === "FREE" ? "green" : "orange";
+function SlotCard({ s, selected, onClick }) {
+  // status: "FREE" | "REGISTER"
+  const isRegistered = s.status === "REGISTER";
+  const imgSrc = isRegistered ? registeredLoc : freeLoc;
+
   return (
-    <WrapItem>
-      <Tag
-        size="lg"
-        variant="subtle"
-        colorScheme={tone}
-        cursor="pointer"
-        onClick={() => onClick(String(s.orders))}
-      >
-        <TagLabel>
-          {s.status === "FREE" ? "FREE" : "REGISTER"} · {s.orders}
-        </TagLabel>
-      </Tag>
-    </WrapItem>
+    <Card
+      onClick={() => onClick(String(s.orders))}
+      cursor="pointer"
+      rounded="lg"
+      overflow="hidden"
+      borderWidth="1px"
+      borderColor={selected ? "purple.500" : "gray.200"}
+      shadow={selected ? "lg" : "sm"}
+      _hover={{ transform: "translateY(-2px)", shadow: "md" }}
+      transition="all 0.15s ease"
+    >
+      <Image
+        src={imgSrc}
+        alt={isRegistered ? "Registered" : "Free"}
+        h="190px"
+        w="100%"
+        objectFit="cover"
+      />
+      <CardBody py={2} px={3}>
+        <HStack justify="space-between" align="center">
+          <Heading size="sm">Location #{s.orders}</Heading>
+          <Tooltip
+            label={
+              isRegistered ? "Device installed here" : "No device bound here"
+            }
+          >
+            <Badge colorScheme={isRegistered ? "red" : "green"}>
+              {isRegistered ? "Registered" : "Free"}
+            </Badge>
+          </Tooltip>
+        </HStack>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -132,6 +165,7 @@ function MealPill({ m, onClick }) {
         colorScheme="purple"
         cursor="pointer"
         onClick={() => onClick(String(m.coin))}
+        _hover={{ transform: "translateY(-2px)", shadow: "md" }}
       >
         <TagLabel>
           {m.setMealName} · {m.amount}元 / {m.coin}币
@@ -152,6 +186,13 @@ function OperatorPanels() {
   const [coinsPerTime, setCoinsPerTime] = useState("");
   const [slots, setSlots] = useState([]);
   const [meals, setMeals] = useState([]);
+  const [carts, setCarts] = useState([]);
+  const [unlockIndex, setUnlockIndex] = useState("");
+  const [selectedCartNo, setSelectedCartNo] = useState("");
+  const [bindInput, setBindInput] = useState(""); // one IC per line
+  const [unbindInput, setUnbindInput] = useState("");
+  const [cartBusy, setCartBusy] = useState(false);
+  const [loadingCarts, setLoadingCarts] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
   const [log, setLog] = useState("Ready.");
   const toast = useToast();
@@ -321,6 +362,133 @@ function OperatorPanels() {
       logJSON({ error: String(e) });
     }
   }
+  const parseLines = (s) =>
+    s
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+  async function loadCartList() {
+    if (!deviceNo) return toast({ status: "warning", title: "Enter deviceNo" });
+    setLoadingCarts(true);
+    try {
+      const res = await getCartList({ deviceNo });
+      if (res?.code === "00000") {
+        setCarts(res.data || []);
+        logJSON({ cartList: res });
+        toast({ status: "success", title: "Carts loaded" });
+      } else {
+        toast({ status: "error", title: res?.msg || "Load failed" });
+        logJSON(res);
+      }
+    } catch (e) {
+      toast({ status: "error", title: "Load failed" });
+      logJSON({ error: String(e) });
+    } finally {
+      setLoadingCarts(false);
+    }
+  }
+
+  async function handleUnlockCart() {
+    if (!deviceNo)
+      return toast({ status: "warning", title: "Device required" });
+
+    // Try to resolve both fields from selection
+    const byIndex = carts.find((c) => String(c.index) === String(unlockIndex));
+    const cartNo = selectedCartNo || byIndex?.cartNo || "";
+    const cartIndexNum = Number(unlockIndex);
+
+    if (!cartNo || !Number.isInteger(cartIndexNum)) {
+      return toast({
+        status: "warning",
+        title: "Select a cart from the list (it will fill cartNo & index)",
+      });
+    }
+    if (byIndex && byIndex.usedStatus === false) {
+      return toast({
+        status: "warning",
+        title:
+          "Selected slot is empty; pick a slot with a cart (Available=true)",
+      });
+    }
+
+    setCartBusy(true);
+    try {
+      const res = await unlockCart({
+        deviceNo,
+        cartNo,
+        cartIndex: cartIndexNum,
+      });
+      logJSON(res);
+      if (res?.code === "00000") {
+        toast({
+          status: "success",
+          title: `Unlock sent for slot #${cartIndexNum}`,
+        });
+        await loadCartList();
+      } else {
+        toast({ status: "error", title: res?.msg || "Unlock failed" });
+      }
+    } catch (e) {
+      toast({ status: "error", title: "Unlock failed" });
+      logJSON({ error: String(e) });
+    } finally {
+      setCartBusy(false);
+    }
+  }
+  async function handleBindCarts() {
+    const list = parseLines(bindInput);
+    console.log("[BIND carts] parsed list:", list);
+    if (!list.length)
+      return toast({
+        status: "warning",
+        title: "Add IC card numbers (one per line)",
+      });
+    setCartBusy(true);
+    try {
+      const res = await bindCarts({ cartNo: list });
+      logJSON(res);
+      if (res?.code === "00000") {
+        toast({ status: "success", title: "Carts bound" });
+        setBindInput("");
+        await loadCartList();
+      } else {
+        toast({ status: "error", title: res?.msg || "Bind failed" });
+      }
+    } catch (e) {
+      toast({ status: "error", title: "Bind failed" });
+      logJSON({ error: String(e) });
+    } finally {
+      setCartBusy(false);
+    }
+  }
+
+  async function handleUnbindCarts() {
+    const list = parseLines(unbindInput);
+    if (!list.length)
+      return toast({
+        status: "warning",
+        title: "Add IC card numbers (one per line)",
+      });
+    setCartBusy(true);
+    try {
+      const res = await unbindCarts({ cartNo: list });
+      logJSON(res);
+      if (res?.code === "00000") {
+        toast({ status: "success", title: "Carts unbound" });
+        setUnbindInput("");
+        await loadCartList();
+      } else {
+        toast({ status: "error", title: res?.msg || "Unbind failed" });
+      }
+    } catch (e) {
+      toast({ status: "error", title: "Unbind failed" });
+      logJSON({ error: String(e) });
+    } finally {
+      setCartBusy(false);
+    }
+  }
+
   async function handleRemoveSite() {
     if (!siteNo) return toast({ status: "warning", title: "Enter siteNo" });
     if (!confirm(`Remove site ${siteNo}?`)) return;
@@ -342,6 +510,12 @@ function OperatorPanels() {
           icon={SlidersHorizontal}
           onClick={() => setOpen("device")}
           active={open === "device"}
+        />
+        <Tile
+          title="Cart Ops"
+          icon={List}
+          onClick={() => setOpen("cart")}
+          active={open === "cart"}
         />
         <Tile
           title="Set Meals"
@@ -383,7 +557,7 @@ function OperatorPanels() {
                 placeholder="01007008"
               />
             </Field>
-            <Field label="Slot (orders)">
+            <Field label="Location (order)">
               <Input
                 value={orders}
                 onChange={(e) => setOrders(e.target.value)}
@@ -408,22 +582,44 @@ function OperatorPanels() {
             </Button>
           </HStack>
 
-          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mt={5}>
+          <SimpleGrid columns={1} spacing={4} mt={5}>
             <Box borderWidth="1px" rounded="xl" p={3}>
               <Heading size="sm" mb={2}>
-                Slots
+                Locations (Site slots)
               </Heading>
+
               {slots.length === 0 ? (
                 <Text fontSize="sm" color="gray.500">
-                  No data
+                  No Locations yet
                 </Text>
               ) : (
-                <Wrap>
+                <SimpleGrid
+                  columns={{ base: 2, md: 3, lg: 4 }}
+                  minChildWidth="140px"
+                  spacing={6}
+                >
                   {slots.map((s, i) => (
-                    <SlotPill key={i} s={s} onClick={setOrders} />
+                    <SlotCard
+                      key={i}
+                      s={s}
+                      selected={String(orders) === String(s.orders)}
+                      onClick={(val) => {
+                        setOrders(val);
+                      }}
+                    />
                   ))}
-                </Wrap>
+                </SimpleGrid>
               )}
+              <HStack spacing={4} mt={3}>
+                <HStack>
+                  <Box w="10px" h="10px" bg="purple.500" rounded="sm" />
+                  <Text fontSize="xs">Registered (device installed)</Text>
+                </HStack>
+                <HStack>
+                  <Box w="10px" h="10px" bg="gray.400" rounded="sm" />
+                  <Text fontSize="xs">Free (empty location)</Text>
+                </HStack>
+              </HStack>
             </Box>
             <Box borderWidth="1px" rounded="xl" p={3}>
               <Heading size="sm" mb={2}>
@@ -481,6 +677,130 @@ function OperatorPanels() {
                 Score (+coins)
               </Button>
             </HStack>
+          </CardBody>
+        </Card>
+      )}
+      {open === "cart" && (
+        <Card variant="outline" rounded="2xl">
+          <CardHeader>
+            <Heading size="md">Cart Operations</Heading>
+          </CardHeader>
+          <CardBody>
+            {/* Device input (reuses your Site Overview Device No field) */}
+            <HStack spacing={3} mb={4}>
+              <Button
+                leftIcon={<List size={16} />}
+                onClick={loadCartList}
+                isLoading={loadingCarts}
+              >
+                Load carts for device
+              </Button>
+            </HStack>
+
+            {/* Current carts list */}
+            <Box borderWidth="1px" rounded="xl" p={3} mb={5}>
+              <Heading size="sm" mb={2}>
+                Carts in device
+              </Heading>
+              {!carts || carts.length === 0 ? (
+                <Text fontSize="sm" color="gray.500">
+                  No carts loaded yet.
+                </Text>
+              ) : (
+                <Wrap>
+                  {carts.map((c, i) => (
+                    <WrapItem
+                      key={i}
+                      onClick={() => {
+                        setUnlockIndex(String(c.index));
+                        setSelectedCartNo(c.cartNo || "");
+                      }}
+                    >
+                      <Tag
+                        size="lg"
+                        variant="subtle"
+                        colorScheme={c.usedStatus ? "green" : "red"}
+                      >
+                        <TagLabel>
+                          Slot #{c.index} ·{" "}
+                          {c.usedStatus ? "Available" : "Not available"} · IC:
+                          {c.cartNo || "—"}
+                        </TagLabel>
+                      </Tag>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              )}
+            </Box>
+
+            {/* Unlock test */}
+            <Box borderWidth="1px" rounded="xl" p={3} mb={5}>
+              <Heading size="sm" mb={3}>
+                Unlock (manual)
+              </Heading>
+              <HStack spacing={3}>
+                <Field label="Cart Index">
+                  <Input
+                    value={unlockIndex}
+                    onChange={(e) => setUnlockIndex(e.target.value)}
+                    placeholder="e.g. 2"
+                    maxW="140px"
+                  />
+                  <Text fontSize="sm" color="gray.600">
+                    CartNo: {selectedCartNo || "—"}
+                  </Text>
+                </Field>
+                <Button onClick={handleUnlockCart} isLoading={cartBusy}>
+                  Unlock
+                </Button>
+              </HStack>
+              <Text fontSize="xs" color="gray.500" mt={2}>
+                Use after payment in Customer flow. This is a manual test
+                shortcut.
+              </Text>
+            </Box>
+
+            {/* Bind / Unbind */}
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <Box borderWidth="1px" rounded="xl" p={3}>
+                <Heading size="sm" mb={3}>
+                  Bind carts to merchant
+                </Heading>
+                <Field label="IC card numbers (one per line)">
+                  <Textarea
+                    rows={6}
+                    value={bindInput}
+                    onChange={(e) => setBindInput(e.target.value)}
+                    placeholder={"15A451C1\n15A451C2"}
+                  />
+                </Field>
+                <Button mt={3} onClick={handleBindCarts} isLoading={cartBusy}>
+                  Bind
+                </Button>
+              </Box>
+
+              <Box borderWidth="1px" rounded="xl" p={3}>
+                <Heading size="sm" mb={3}>
+                  Unbind carts from merchant
+                </Heading>
+                <Field label="IC card numbers (one per line)">
+                  <Textarea
+                    rows={6}
+                    value={unbindInput}
+                    onChange={(e) => setUnbindInput(e.target.value)}
+                    placeholder={"15A451C1\n15A451C2"}
+                  />
+                </Field>
+                <Button
+                  mt={3}
+                  onClick={handleUnbindCarts}
+                  isLoading={cartBusy}
+                  colorScheme="red"
+                >
+                  Unbind
+                </Button>
+              </Box>
+            </SimpleGrid>
           </CardBody>
         </Card>
       )}
@@ -571,12 +891,10 @@ function OperatorPanels() {
             >
               {log}
             </Box>
-
           </CardBody>
         </Card>
       )}
       <Box borderTopWidth="1px" borderColor="gray.200" />
-      
     </VStack>
   );
 }
@@ -635,32 +953,7 @@ export default function App() {
       </Box>
 
       <Box maxW="6xl" mx="auto" p={{ base: 4, md: 6 }}>
-        {tab === "operator" ? (
-          <OperatorPanels />
-        ) : (
-          <CustomerPanels />
-          // <VStack align="stretch" spacing={5}>
-          //   <Card variant="outline" rounded="2xl">
-          //     <CardHeader>
-          //       <Heading size="md">Customer Flow (Coming Soon)</Heading>
-          //     </CardHeader>
-          //     <CardBody>
-          //       <ol style={{ marginLeft: "1rem" }}>
-          //         <li>
-          //           Scan QR → Site page loads with available REGISTER slots.
-          //         </li>
-          //         <li>Select package → Create order → Payment.</li>
-          //         <li>
-          //           On success → <b>Open lock</b> to start rental.
-          //         </li>
-          //         <li>
-          //           On return → <b>Close lock</b> + settle order.
-          //         </li>
-          //       </ol>
-          //     </CardBody>
-          //   </Card>
-          // </VStack>
-        )}
+        {tab === "operator" ? <OperatorPanels /> : <CustomerPanels />}
       </Box>
     </Box>
   );

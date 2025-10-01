@@ -2,232 +2,307 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Card,
-  CardHeader,
   CardBody,
+  CardHeader,
   Heading,
   Text,
-  Wrap,
-  WrapItem,
-  Tag,
-  TagLabel,
+  SimpleGrid,
+  HStack,
   VStack,
+  Image,
+  Badge,
   Button,
   useToast,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
-  useDisclosure,
+  Spinner,
+  Divider,
 } from "@chakra-ui/react";
-import { Activity, Package } from "lucide-react";
-import { getSiteSlots, getSiteMeals } from "../lib/api";
+import { motion } from "framer-motion";
+import {
+  getDeviceInfo,
+  getCartList,
+  getSiteMeals,
+  unlockCart,
+} from "../lib/api";
 import stroller from "../assets/stroller.webp";
-function translateMealName(rawName) {
-  if (!rawName) return rawName;
+const MotionCard = motion(Card);
 
-  if (rawName.includes("推荐启动套餐")) return "Recommended Start Package";
-
-  const match = rawName.match(/启动套餐(\d+)/);
-  if (match) {
-    return `Start Package ${match[1]}`;
-  }
-
-  return rawName;
-}
-
-function replaceCurrencyUnit(unit) {
-  return unit === "元" ? "SAR" : unit;
-}
-
-function replaceCoinUnit(unit) {
-  return unit === "币" ? "Points" : unit;
-}
-
-function SlotPill({ s, selected, onSelect }) {
-  const isAvailable = s.status === "REGISTER";
-  const label = isAvailable ? "Available" : "In Use";
-  const tone = isAvailable ? "green" : "red";
-
-  return (
-    <WrapItem>
-      <Box textAlign="center">
-        <Tag
-          size="lg"
-          variant={selected ? "solid" : "subtle"}
-          colorScheme={tone}
-          cursor={isAvailable ? "pointer" : "not-allowed"}
-          opacity={isAvailable ? 1 : 0.5}
-          onClick={() => isAvailable && onSelect(s)}
-        >
-          <TagLabel>
-            {label} · {s.orders}
-          </TagLabel>
-        </Tag>
-        <Box mt={2}>
-          <img
-            src={stroller}
-            alt="Stroller"
-            style={{ width: "100px", margin: "0 auto" }}
-          />
-        </Box>
-      </Box>
-    </WrapItem>
+// tiny helper to read query param
+function useQueryParam(key) {
+  return useMemo(
+    () => new URLSearchParams(window.location.search).get(key) || "",
+    []
   );
 }
 
-function MealPill({ m, selected, onSelect }) {
-  const displayName = translateMealName(m.setMealName);
-  const currency = replaceCurrencyUnit(m.amountUnit);
-  const coinUnit = replaceCoinUnit(m.coinUnit);
+// map vendor Chinese names to English + SAR/points presentation
+function formatMeal(m) {
+  const name = (m?.setMealName || "").trim();
+  const map = {
+    推荐启动套餐: "Recommended",
+    启动套餐1: "Starter 1",
+    启动套餐2: "Starter 2",
+    启动套餐3: "Starter 3",
+    启动套餐4: "Starter 4",
+    启动套餐5: "Starter 5",
+    启动套餐6: "Starter 6",
+  };
+  const displayName = map[name] || name || "Package";
+  // treat amount as SAR and coin as points for display only
+  return {
+    label: `${displayName} • ${Number(m.amount)} SAR / ${Number(m.coin)} pts`,
+    ...m,
+  };
+}
+
+function CartCard({ cart, selected, onSelect }) {
+  const available = cart.usedStatus && cart.cartNo; // has a cart & docked
+  const img = available ? stroller : stroller;
+  const tone = available ? "green" : "gray";
 
   return (
-    <WrapItem>
-      <Tag
-        size="lg"
-        variant={selected ? "solid" : "subtle"}
-        colorScheme="purple"
-        cursor="pointer"
-        onClick={() => onSelect(m)}
-      >
-        <TagLabel>
-          {displayName} · {m.amount}-{currency} / {m.coin} {coinUnit}
-        </TagLabel>
-      </Tag>
-    </WrapItem>
+    <MotionCard
+      onClick={() => available && onSelect(cart)}
+      cursor={available ? "pointer" : "not-allowed"}
+      borderWidth="1px"
+      rounded="lg"
+      whileHover={available ? { y: -3, scale: 1.01 } : {}}
+      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+      borderColor={selected ? "purple.500" : "gray.200"}
+      shadow={selected ? "md" : "sm"}
+      opacity={available ? 1 : 0.6}
+    >
+      <Image
+        src={img}
+        alt={available ? "Available" : "Not available"}
+        h="90px"
+        w="100%"
+        objectFit="contain"
+      />
+      <CardBody py={3} px={3}>
+        <HStack justify="space-between" align="center">
+          <Heading size="sm">Cart #{cart.index}</Heading>
+          <Badge colorScheme={tone}>
+            {available ? "Available" : "Unavailable"}
+          </Badge>
+        </HStack>
+        <Text fontSize="xs" color="gray.600" mt={1}>
+          {cart.cartNo ? `IC: ${cart.cartNo}` : "No cart"}
+        </Text>
+      </CardBody>
+    </MotionCard>
+  );
+}
+
+function MealCard({ meal, selected, onSelect }) {
+  const f = formatMeal(meal);
+  return (
+    <MotionCard
+      onClick={() => onSelect(meal)}
+      cursor="pointer"
+      borderWidth="1px"
+      rounded="lg"
+      whileHover={{ y: -3, scale: 1.01 }}
+      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+      borderColor={selected ? "purple.500" : "gray.200"}
+      shadow={selected ? "md" : "sm"}
+    >
+      <CardBody py={3} px={3}>
+        <Heading size="sm" noOfLines={2}>
+          {f.label}
+        </Heading>
+        <Text fontSize="xs" color="gray.600" mt={1}>
+          {meal.amountType === "decimal"
+            ? "Precise pricing"
+            : "Integer pricing"}
+        </Text>
+      </CardBody>
+    </MotionCard>
   );
 }
 
 export default function CustomerPanels() {
-  const defaultSite = useMemo(
-    () => new URLSearchParams(location.search).get("siteNo") || "",
-    []
-  );
-  const [siteNo] = useState(defaultSite);
-  const [slots, setSlots] = useState([]);
-  const [meals, setMeals] = useState([]);
-  const [selectedSlot, setSelectedSlot] = useState(null);
-  const [selectedMeal, setSelectedMeal] = useState(null);
   const toast = useToast();
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const urlDeviceNo = useQueryParam("deviceNo"); // read from QR link
+  const [deviceNo, setDeviceNo] = useState(urlDeviceNo);
+  const [siteNo, setSiteNo] = useState("");
 
+  const [loading, setLoading] = useState(false);
+  const [carts, setCarts] = useState([]);
+  const [meals, setMeals] = useState([]);
+  const [selectedCart, setSelectedCart] = useState(null);
+  const [selectedMeal, setSelectedMeal] = useState(null);
+  const [paying, setPaying] = useState(false);
+
+  // 1) load device info → siteNo, then load carts & meals
   useEffect(() => {
-    async function load() {
-      if (!siteNo) return;
+    async function bootstrap() {
+      if (!deviceNo) return;
+      setLoading(true);
       try {
-        const [slotsRes, mealsRes] = await Promise.all([
-          getSiteSlots(siteNo),
-          getSiteMeals(siteNo),
+        const info = await getDeviceInfo(deviceNo);
+        const _siteNo = info?.data?.siteNo || "";
+        setSiteNo(_siteNo);
+
+        // in parallel: carts + meals
+        const [cartRes, mealRes] = await Promise.all([
+          getCartList({ deviceNo }),
+          _siteNo
+            ? getSiteMeals(_siteNo)
+            : Promise.resolve({ data: { setMealList: [] } }),
         ]);
-        setSlots(slotsRes?.data || []);
-        setMeals(mealsRes?.data?.setMealList || []);
+
+        setCarts(cartRes?.data || []);
+        setMeals(mealRes?.data?.setMealList || []);
+
+        if (!_siteNo) {
+          toast({
+            status: "warning",
+            title: "This device is not bound to a site yet.",
+          });
+        }
       } catch (e) {
-        toast({ status: "error", title: "Failed to load site info" });
+        toast({ status: "error", title: "Failed to load device data" });
+      } finally {
+        setLoading(false);
       }
     }
-    load();
-  }, [siteNo, toast]);
+    bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceNo]);
 
-  function handlePayment() {
-    onOpen();
-  }
+  // mock payment then unlock
+  async function handlePayAndUnlock() {
+    if (!deviceNo || !selectedCart || !selectedMeal) {
+      return toast({
+        status: "warning",
+        title: "Select a stroller and a package",
+      });
+    }
+    setPaying(true);
 
-  function confirmPayment() {
-    toast({
-      status: "success",
-      title: `Payment successful for ${selectedMeal.amount} SAR`,
-    });
-    onClose();
-    // In real flow: create order + open lock here
+    try {
+      // 2) Mock payment (replace with real gateway later)
+      await new Promise((r) => setTimeout(r, 1200)); // pretend checkout
+
+      // 3) Call unlock with BOTH cartNo and cartIndex (vendor requires both)
+      const res = await unlockCart({
+        deviceNo,
+        cartNo: selectedCart.cartNo,
+        cartIndex: selectedCart.index,
+      });
+
+      if (res?.code === "00000") {
+        toast({
+          status: "success",
+          title: "Unlock sent! Please take your stroller.",
+        });
+        // Optionally refresh list
+        const refreshed = await getCartList({ deviceNo });
+        setCarts(refreshed?.data || []);
+      } else {
+        toast({ status: "error", title: res?.msg || "Unlock failed" });
+      }
+    } catch (e) {
+      toast({ status: "error", title: "Payment/Unlock failed" });
+    } finally {
+      setPaying(false);
+    }
   }
 
   return (
     <VStack align="stretch" spacing={5}>
       <Card variant="outline" rounded="2xl">
         <CardHeader>
-          <Heading size="md">Available Slots</Heading>
-        </CardHeader>
-        <CardBody>
-          {slots.length === 0 ? (
-            <Text fontSize="sm" color="gray.500">
-              No slots found.
-            </Text>
-          ) : (
-            <Wrap>
-              {slots.map((s, i) => (
-                <SlotPill
-                  key={i}
-                  s={s}
-                  selected={selectedSlot?.orders === s.orders}
-                  onSelect={setSelectedSlot}
-                />
-              ))}
-            </Wrap>
-          )}
-        </CardBody>
-      </Card>
-
-      <Card variant="outline" rounded="2xl">
-        <CardHeader>
-          <Heading size="md">Packages</Heading>
-        </CardHeader>
-        <CardBody>
-          {meals.length === 0 ? (
-            <Text fontSize="sm" color="gray.500">
-              No packages found.
-            </Text>
-          ) : (
-            <Wrap>
-              {meals.map((m, i) => (
-                <MealPill
-                  key={i}
-                  m={m}
-                  selected={selectedMeal?.id === m.id}
-                  onSelect={setSelectedMeal}
-                />
-              ))}
-            </Wrap>
-          )}
-        </CardBody>
-      </Card>
-
-      {selectedSlot && selectedMeal && (
-        <Box p={3} borderWidth="1px" rounded="xl" bg="purple.50">
-          <Text fontSize="sm" mb={2}>
-            Selected slot: <b>{selectedSlot.orders}</b> | Package:{" "}
-            <b>{selectedMeal.setMealName}</b> ({selectedMeal.amount} SAR /{" "}
-            {selectedMeal.coin} points)
+          <Heading size="md">Rent a stroller</Heading>
+          <Text fontSize="sm" color="gray.600" mt={1}>
+            Device: <b>{deviceNo || "—"}</b>{" "}
+            {siteNo ? (
+              <>
+                {" "}
+                | Site: <b>{siteNo}</b>
+              </>
+            ) : null}
           </Text>
-          <Button colorScheme="purple" onClick={handlePayment}>
-            Proceed to Payment
-          </Button>
-        </Box>
-      )}
+        </CardHeader>
+        <CardBody>
+          {loading ? (
+            <HStack>
+              <Spinner size="sm" />
+              <Text>Loading...</Text>
+            </HStack>
+          ) : (
+            <>
+              {/* Carts */}
+              <Heading size="sm" mb={2}>
+                Choose a stroller
+              </Heading>
+              {!carts || carts.length === 0 ? (
+                <Text fontSize="sm" color="gray.500">
+                  No data
+                </Text>
+              ) : (
+                <SimpleGrid minChildWidth="140px" spacing={3}>
+                  {carts.map((c, i) => (
+                    <CartCard
+                      key={i}
+                      cart={c}
+                      selected={selectedCart?.index === c.index}
+                      onSelect={setSelectedCart}
+                    />
+                  ))}
+                </SimpleGrid>
+              )}
 
-      {/* Mock Payment Modal */}
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Mock Payment</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <Text>
-              You are about to pay <b>{selectedMeal?.amount} SAR</b> for package{" "}
-              <b>{selectedMeal?.setMealName}</b>.
-            </Text>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button colorScheme="purple" onClick={confirmPayment}>
-              Confirm Payment
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+              <Divider my={5} />
+
+              {/* Packages */}
+              <Heading size="sm" mb={2}>
+                Choose a package
+              </Heading>
+              {!meals || meals.length === 0 ? (
+                <Text fontSize="sm" color="gray.500">
+                  No packages available for this site
+                </Text>
+              ) : (
+                <SimpleGrid minChildWidth="180px" spacing={3}>
+                  {meals.map((m, i) => (
+                    <MealCard
+                      key={i}
+                      meal={m}
+                      selected={
+                        selectedMeal?.id === m.id && !!m.id
+                          ? true
+                          : selectedMeal?.orders === m.orders
+                      }
+                      onSelect={setSelectedMeal}
+                    />
+                  ))}
+                </SimpleGrid>
+              )}
+
+              <HStack mt={5}>
+                <Button
+                  colorScheme="purple"
+                  onClick={handlePayAndUnlock}
+                  isLoading={paying}
+                  isDisabled={!selectedCart || !selectedMeal}
+                >
+                  Pay & Unlock
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={async () => {
+                    const refreshed = await getCartList({ deviceNo });
+                    setCarts(refreshed?.data || []);
+                  }}
+                >
+                  Refresh
+                </Button>
+              </HStack>
+            </>
+          )}
+        </CardBody>
+      </Card>
     </VStack>
   );
 }
