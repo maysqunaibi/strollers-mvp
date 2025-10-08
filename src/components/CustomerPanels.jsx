@@ -15,7 +15,14 @@ import {
   useToast,
   Spinner,
   Divider,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
 } from "@chakra-ui/react";
+
 import { motion } from "framer-motion";
 import {
   getDeviceInfo,
@@ -52,6 +59,29 @@ function formatMeal(m) {
     label: `${displayName} • ${Number(m.amount)} SAR / ${Number(m.coin)} pts`,
     ...m,
   };
+}
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("Script load error: " + src));
+    document.head.appendChild(s);
+  });
+}
+
+function loadCss(href) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`link[href="${href}"]`)) return resolve();
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = href;
+    l.onload = resolve;
+    l.onerror = () => reject(new Error("CSS load error: " + href));
+    document.head.appendChild(l);
+  });
 }
 
 function CartCard({ cart, selected, onSelect }) {
@@ -112,7 +142,7 @@ function MealCard({ meal, selected, onSelect }) {
         </Heading>
         <Text fontSize="xs" color="gray.600" mt={1}>
           {meal.amountType === "decimal"
-            ? "Precise pricing"
+            ? "Packages pricing"
             : "Integer pricing"}
         </Text>
       </CardBody>
@@ -132,7 +162,7 @@ export default function CustomerPanels() {
   const [selectedCart, setSelectedCart] = useState(null);
   const [selectedMeal, setSelectedMeal] = useState(null);
   const [paying, setPaying] = useState(false);
-
+  const [showPay, setShowPay] = useState(false);
   // 1) load device info → siteNo, then load carts & meals
   useEffect(() => {
     async function bootstrap() {
@@ -169,140 +199,225 @@ export default function CustomerPanels() {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceNo]);
+  async function ensureMoyasarLoaded() {
+    // If already present, done
+    if (window.Moyasar && typeof window.Moyasar.init === "function") return;
+
+    // Add CSS once
+    if (!document.querySelector('link[data-mysr="css"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href =
+        "https://cdn.jsdelivr.net/npm/moyasar-payment-form@2.1.1/dist/moyasar.css";
+      link.setAttribute("data-mysr", "css");
+      document.head.appendChild(link);
+    }
+
+    // Add JS once
+    if (!document.querySelector('script[data-mysr="js"]')) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src =
+          "https://cdn.jsdelivr.net/npm/moyasar-payment-form@2.1.1/dist/moyasar.umd.js";
+        s.async = true;
+        s.defer = true;
+        s.setAttribute("data-mysr", "js");
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Failed to load Moyasar script"));
+        document.head.appendChild(s);
+      });
+    }
+
+    // final guard
+    if (!window.Moyasar || typeof window.Moyasar.init !== "function") {
+      throw new Error("Moyasar failed to initialize");
+    }
+  }
 
   // mock payment then unlock
   async function handlePayAndUnlock() {
+    console.log("I'm being called");
     if (!deviceNo || !selectedCart || !selectedMeal) {
       return toast({
         status: "warning",
         title: "Select a stroller and a package",
       });
     }
-    setPaying(true);
 
-    try {
-      // 2) Mock payment (replace with real gateway later)
-      await new Promise((r) => setTimeout(r, 1200)); // pretend checkout
+    const amountHalalas = Math.round(Number(selectedMeal.amount) * 100);
 
-      // 3) Call unlock with BOTH cartNo and cartIndex (vendor requires both)
-      const res = await unlockCart({
+    // Save the selection for the return step
+    localStorage.setItem(
+      "pendingPaymentSelection",
+      JSON.stringify({
         deviceNo,
         cartNo: selectedCart.cartNo,
         cartIndex: selectedCart.index,
-      });
+        siteNo,
+        amountHalalas,
+      })
+    );
 
-      if (res?.code === "00000") {
-        toast({
-          status: "success",
-          title: "Unlock sent! Please take your stroller.",
-        });
-        // Optionally refresh list
-        const refreshed = await getCartList({ deviceNo });
-        setCarts(refreshed?.data || []);
-      } else {
-        toast({ status: "error", title: res?.msg || "Unlock failed" });
-      }
-    } catch (e) {
-      toast({ status: "error", title: "Payment/Unlock failed" });
-    } finally {
-      setPaying(false);
+    try {
+      console.log("Loading Moyasar…");
+
+      await ensureMoyasarLoaded();
+
+      setShowPay(true);
+      setTimeout(() => {
+        console.log(
+          "Moyasar loaded?",
+          !!window.Moyasar,
+          "init?",
+          typeof window.Moyasar?.init
+        );
+        if (!window.Moyasar?.init) {
+          toast({ status: "error", title: "Payment library failed to load" });
+          return;
+        }
+
+        setShowPay(true);
+        setTimeout(() => {
+          console.log(
+            "Moyasar loaded?",
+            !!window.Moyasar,
+            "init?",
+            typeof window.Moyasar?.init
+          );
+          if (!window.Moyasar?.init) {
+            toast({ status: "error", title: "Payment library failed to load" });
+            return;
+          }
+          window.Moyasar.init({
+            element: ".mysr-form",
+            amount: amountHalalas, // <- use this name
+            currency: "SAR",
+            description: `Stroller – Device ${deviceNo} / Cart ${selectedCart.index}`,
+            publishable_api_key:
+              "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt", // ensure this env exists
+            callback_url: `${window.location.origin}/pay/return`,
+            methods: ["creditcard", "stcpay"],
+          });
+        }, 0);
+      }, 0);
+    } catch (err) {
+      console.error(err);
+      toast({ status: "error", title: "Could not load payment form" });
     }
   }
 
   return (
-    <VStack align="stretch" spacing={5}>
-      <Card variant="outline" rounded="2xl">
-        <CardHeader>
-          <Heading size="md">Rent a stroller</Heading>
-          <Text fontSize="sm" color="gray.600" mt={1}>
-            Device: <b>{deviceNo || "—"}</b>{" "}
-            {siteNo ? (
-              <>
-                {" "}
-                | Site: <b>{siteNo}</b>
-              </>
-            ) : null}
-          </Text>
-        </CardHeader>
-        <CardBody>
-          {loading ? (
-            <HStack>
-              <Spinner size="sm" />
-              <Text>Loading...</Text>
-            </HStack>
-          ) : (
-            <>
-              {/* Carts */}
-              <Heading size="sm" mb={2}>
-                Choose a stroller
-              </Heading>
-              {!carts || carts.length === 0 ? (
-                <Text fontSize="sm" color="gray.500">
-                  No data
-                </Text>
-              ) : (
-                <SimpleGrid minChildWidth="140px" spacing={3}>
-                  {carts.map((c, i) => (
-                    <CartCard
-                      key={i}
-                      cart={c}
-                      selected={selectedCart?.index === c.index}
-                      onSelect={setSelectedCart}
-                    />
-                  ))}
-                </SimpleGrid>
-              )}
-
-              <Divider my={5} />
-
-              {/* Packages */}
-              <Heading size="sm" mb={2}>
-                Choose a package
-              </Heading>
-              {!meals || meals.length === 0 ? (
-                <Text fontSize="sm" color="gray.500">
-                  No packages available for this site
-                </Text>
-              ) : (
-                <SimpleGrid minChildWidth="180px" spacing={3}>
-                  {meals.map((m, i) => (
-                    <MealCard
-                      key={i}
-                      meal={m}
-                      selected={
-                        selectedMeal?.id === m.id && !!m.id
-                          ? true
-                          : selectedMeal?.orders === m.orders
-                      }
-                      onSelect={setSelectedMeal}
-                    />
-                  ))}
-                </SimpleGrid>
-              )}
-
-              <HStack mt={5}>
-                <Button
-                  colorScheme="purple"
-                  onClick={handlePayAndUnlock}
-                  isLoading={paying}
-                  isDisabled={!selectedCart || !selectedMeal}
-                >
-                  Pay & Unlock
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={async () => {
-                    const refreshed = await getCartList({ deviceNo });
-                    setCarts(refreshed?.data || []);
-                  }}
-                >
-                  Refresh
-                </Button>
+    <>
+      <VStack align="stretch" spacing={5}>
+        <Card variant="outline" rounded="2xl">
+          <CardHeader>
+            <Heading size="md">Rent a stroller</Heading>
+            <Text fontSize="sm" color="gray.600" mt={1}>
+              Device: <b>{deviceNo || "—"}</b>{" "}
+              {siteNo ? (
+                <>
+                  {" "}
+                  | Site: <b>{siteNo}</b>
+                </>
+              ) : null}
+            </Text>
+          </CardHeader>
+          <CardBody>
+            {loading ? (
+              <HStack>
+                <Spinner size="sm" />
+                <Text>Loading...</Text>
               </HStack>
-            </>
-          )}
-        </CardBody>
-      </Card>
-    </VStack>
+            ) : (
+              <>
+                {/* Carts */}
+                <Heading size="sm" mb={2}>
+                  Choose a stroller
+                </Heading>
+                {!carts || carts.length === 0 ? (
+                  <Text fontSize="sm" color="gray.500">
+                    No data
+                  </Text>
+                ) : (
+                  <SimpleGrid minChildWidth="140px" spacing={3}>
+                    {carts.map((c, i) => (
+                      <CartCard
+                        key={i}
+                        cart={c}
+                        selected={selectedCart?.index === c.index}
+                        onSelect={setSelectedCart}
+                      />
+                    ))}
+                  </SimpleGrid>
+                )}
+
+                <Divider my={5} />
+
+                {/* Packages */}
+                <Heading size="sm" mb={2}>
+                  Choose a package
+                </Heading>
+                {!meals || meals.length === 0 ? (
+                  <Text fontSize="sm" color="gray.500">
+                    No packages available for this site
+                  </Text>
+                ) : (
+                  <SimpleGrid minChildWidth="180px" spacing={3}>
+                    {meals.map((m, i) => (
+                      <MealCard
+                        key={i}
+                        meal={m}
+                        selected={
+                          selectedMeal?.id === m.id && !!m.id
+                            ? true
+                            : selectedMeal?.orders === m.orders
+                        }
+                        onSelect={setSelectedMeal}
+                      />
+                    ))}
+                  </SimpleGrid>
+                )}
+
+                <HStack mt={5}>
+                  <Button
+                    colorScheme="purple"
+                    onClick={handlePayAndUnlock}
+                    isLoading={paying}
+                    isDisabled={!selectedCart || !selectedMeal}
+                  >
+                    Pay & Unlock
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={async () => {
+                      const refreshed = await getCartList({ deviceNo });
+                      setCarts(refreshed?.data || []);
+                    }}
+                  >
+                    Refresh
+                  </Button>
+                </HStack>
+              </>
+            )}
+          </CardBody>
+        </Card>
+      </VStack>
+      <Modal
+        isOpen={showPay}
+        onClose={() => setShowPay(false)}
+        size="lg"
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Secure Payment</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {/* Moyasar mounts its form inside this element */}
+            <div className="mysr-form"></div>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }
