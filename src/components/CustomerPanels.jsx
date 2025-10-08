@@ -281,7 +281,7 @@ export default function CustomerPanels() {
           /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
         // Flip to true only after Moyasar confirms Apple Pay is enabled
-        const applePayActivated = false;
+        const applePayActivated = true;
 
         window.Moyasar.init({
           element: ".mysr-form",
