@@ -275,30 +275,27 @@ export default function CustomerPanels() {
           toast({ status: "error", title: "Payment library failed to load" });
           return;
         }
+        const canApplePay =
+          window.location.protocol === "https:" &&
+          /strollersfront\.netlify\.app$/i.test(location.hostname) &&
+          /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
-        setShowPay(true);
-        setTimeout(() => {
-          console.log(
-            "Moyasar loaded?",
-            !!window.Moyasar,
-            "init?",
-            typeof window.Moyasar?.init
-          );
-          if (!window.Moyasar?.init) {
-            toast({ status: "error", title: "Payment library failed to load" });
-            return;
-          }
-          window.Moyasar.init({
-            element: ".mysr-form",
-            amount: amountHalalas, // <- use this name
-            currency: "SAR",
-            description: `Stroller – Device ${deviceNo} / Cart ${selectedCart.index}`,
-            publishable_api_key:
-              "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt", // ensure this env exists
-            callback_url: `${window.location.origin}/pay/return`,
-            methods: ["creditcard", "applepay"],
-          });
-        }, 0);
+        // Flip to true only after Moyasar confirms Apple Pay is enabled
+        const applePayActivated = false;
+
+        window.Moyasar.init({
+          element: ".mysr-form",
+          amount: amountHalalas,
+          currency: "SAR",
+          description: `Stroller – Device ${deviceNo} / Cart ${selectedCart.index}`,
+          publishable_api_key:
+            "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt",
+          callback_url: `${location.origin}/pay/return`,
+          methods: [
+            "creditcard",
+            ...(canApplePay && applePayActivated ? ["applepay"] : []),
+          ],
+        });
       }, 0);
     } catch (err) {
       console.error(err);
