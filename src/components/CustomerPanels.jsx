@@ -291,10 +291,7 @@ export default function CustomerPanels() {
           publishable_api_key:
             "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt",
           callback_url: `${location.origin}/pay/return`,
-          methods: [
-            "creditcard",
-            ...(canApplePay && applePayActivated ? ["applepay"] : []),
-          ],
+          methods: ["creditcard", "applepay"],
         });
       }, 0);
     } catch (err) {
