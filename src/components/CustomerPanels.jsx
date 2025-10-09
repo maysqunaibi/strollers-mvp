@@ -246,7 +246,7 @@ export default function CustomerPanels() {
       });
     }
 
-    const amountHalalas = Math.round(Number(selectedMeal.amount) * 100);
+    const amountHalalas = Math.round(Number(selectedMeal.amount) * 1000);
 
     // Save the selection for the return step
     localStorage.setItem(
