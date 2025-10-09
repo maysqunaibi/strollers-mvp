@@ -56,7 +56,9 @@ function formatMeal(m) {
   const displayName = map[name] || name || "Package";
   // treat amount as SAR and coin as points for display only
   return {
-    label: `${displayName} • ${Number(m.amount)} SAR / ${Number(m.coin)} pts`,
+    label: `${displayName} • ${Number(m.amount) * 10} SAR / ${
+      10 * Number(m.coin)
+    } pts`,
     ...m,
   };
 }
