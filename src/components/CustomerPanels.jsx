@@ -280,25 +280,17 @@ export default function CustomerPanels() {
           amount: amountHalalas, // integer, halalas
           currency: "SAR",
           description: `Stroller – Device ${deviceNo} / Cart ${selectedCart.index}`,
-          publishable_api_key: import.meta.env.VITE_MOYASAR_PUBLISHABLE_KEY,
+          publishable_api_key:
+            "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt",
           callback_url: `${window.location.origin}/pay/return`,
-
-          // ADD THESE ↓↓↓
           supported_networks: ["visa", "mastercard", "mada"],
           methods: ["creditcard", "stcpay", "applepay"],
-
           apple_pay: {
-            country: "SA", // store country
-            label: "Rental Strollers", // appears in Apple Pay sheet
+            country: "SA",
+            label: "Your Store Name",
             validate_merchant_url:
               "https://api.moyasar.com/v1/applepay/initiate",
           },
-
-          // // (optional but recommended)
-          // on_completed: async function (payment) {
-          //   // Save payment.id to your backend to verify later
-          //   // await fetch("/api/payments/save", { method:"POST", body: JSON.stringify(payment), headers:{"Content-Type":"application/json"}});
-          // },
         });
       }, 0);
     } catch (err) {
