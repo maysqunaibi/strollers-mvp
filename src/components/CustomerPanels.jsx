@@ -275,23 +275,16 @@ export default function CustomerPanels() {
           toast({ status: "error", title: "Payment library failed to load" });
           return;
         }
-        const canApplePay =
-          window.location.protocol === "https:" &&
-          /strollersfront\.netlify\.app$/i.test(location.hostname) &&
-          /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
-        // Flip to true only after Moyasar confirms Apple Pay is enabled
-        const applePayActivated = true;
-
         window.Moyasar.init({
           element: ".mysr-form",
           amount: amountHalalas,
           currency: "SAR",
           description: `Stroller – Device ${deviceNo} / Cart ${selectedCart.index}`,
+          supported_networks: ["visa", "mastercard", "mada"],
           publishable_api_key:
             "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt",
           callback_url: `${location.origin}/pay/return`,
-          methods: ["creditcard", "applepay"],
+          methods: ["applepay"],
         });
       }, 0);
     } catch (err) {
