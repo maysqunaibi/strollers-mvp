@@ -27,7 +27,7 @@ import { motion } from "framer-motion";
 import {
   getDeviceInfo,
   getCartList,
-  getSiteMeals,
+  getLocalPackages,
   unlockCart,
 } from "../lib/api";
 import stroller from "../assets/stroller.webp";
@@ -41,27 +41,6 @@ function useQueryParam(key) {
   );
 }
 
-// map vendor Chinese names to English + SAR/points presentation
-function formatMeal(m) {
-  const name = (m?.setMealName || "").trim();
-  const map = {
-    推荐启动套餐: "Recommended",
-    启动套餐1: "Starter 1",
-    启动套餐2: "Starter 2",
-    启动套餐3: "Starter 3",
-    启动套餐4: "Starter 4",
-    启动套餐5: "Starter 5",
-    启动套餐6: "Starter 6",
-  };
-  const displayName = map[name] || name || "Package";
-  // treat amount as SAR and coin as points for display only
-  return {
-    label: `${displayName} • ${Number(m.amount) * 10} SAR / ${
-      10 * Number(m.coin)
-    } pts`,
-    ...m,
-  };
-}
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) return resolve();
@@ -125,11 +104,10 @@ function CartCard({ cart, selected, onSelect }) {
   );
 }
 
-function MealCard({ meal, selected, onSelect }) {
-  const f = formatMeal(meal);
+function PackageCard({ pckg, selected, onSelect }) {
   return (
     <MotionCard
-      onClick={() => onSelect(meal)}
+      onClick={() => onSelect(pckg)}
       cursor="pointer"
       borderWidth="1px"
       rounded="lg"
@@ -140,12 +118,10 @@ function MealCard({ meal, selected, onSelect }) {
     >
       <CardBody py={3} px={3}>
         <Heading size="sm" noOfLines={2}>
-          {f.label}
+          {pckg.name}
         </Heading>
         <Text fontSize="xs" color="gray.600" mt={1}>
-          {meal.amountType === "decimal"
-            ? "Packages pricing"
-            : "Integer pricing"}
+          {pckg.amount_halalas / 100} SAR
         </Text>
       </CardBody>
     </MotionCard>
@@ -160,31 +136,29 @@ export default function CustomerPanels() {
 
   const [loading, setLoading] = useState(false);
   const [carts, setCarts] = useState([]);
-  const [meals, setMeals] = useState([]);
+  const [packages, setPackages] = useState([]);
   const [selectedCart, setSelectedCart] = useState(null);
-  const [selectedMeal, setSelectedMeal] = useState(null);
+  const [selectedPackage, setSelectedPackage] = useState(null);
   const [paying, setPaying] = useState(false);
   const [showPay, setShowPay] = useState(false);
-  // 1) load device info → siteNo, then load carts & meals
+  // 1) load device info → siteNo, then load carts & packages
   useEffect(() => {
     async function bootstrap() {
       if (!deviceNo) return;
       setLoading(true);
       try {
         const info = await getDeviceInfo(deviceNo);
-        const _siteNo = info?.data?.siteNo || "";
+        const _siteNo = info?.data?.siteNo || "S1001585";
         setSiteNo(_siteNo);
 
-        // in parallel: carts + meals
-        const [cartRes, mealRes] = await Promise.all([
+        // in parallel: carts + packages
+        const [cartRes, pckgRes] = await Promise.all([
           getCartList({ deviceNo }),
-          _siteNo
-            ? getSiteMeals(_siteNo)
-            : Promise.resolve({ data: { setMealList: [] } }),
+          _siteNo ? getLocalPackages(_siteNo) : getLocalPackages(null),
         ]);
 
         setCarts(cartRes?.data || []);
-        setMeals(mealRes?.data?.setMealList || []);
+        setPackages(pckgRes || []);
 
         if (!_siteNo) {
           toast({
@@ -239,14 +213,14 @@ export default function CustomerPanels() {
   // mock payment then unlock
   async function handlePayAndUnlock() {
     console.log("I'm being called");
-    if (!deviceNo || !selectedCart || !selectedMeal) {
+    if (!deviceNo || !selectedCart || !selectedPackage) {
       return toast({
         status: "warning",
         title: "Select a stroller and a package",
       });
     }
 
-    const amountHalalas = Math.round(Number(selectedMeal.amount) * 1000);
+    const amountHalalas = Number(selectedPackage.amount_halalas);
 
     // Save the selection for the return step
     localStorage.setItem(
@@ -286,10 +260,10 @@ export default function CustomerPanels() {
             "pk_test_Z6XdEAj9RNpPF8HKeDYi33kGZ1SZ7chu8tUvXXCt",
           callback_url: `${window.location.origin}/pay/return`,
           supported_networks: ["visa", "mastercard", "mada"],
-          methods: ["creditcard", "stcpay", "applepay"],
+          methods: ["creditcard", "applepay"],
           apple_pay: {
             country: "SA",
-            label: "Your Store Name",
+            label: "Rental Strollers",
             validate_merchant_url:
               "https://api.moyasar.com/v1/applepay/initiate",
           },
@@ -352,22 +326,22 @@ export default function CustomerPanels() {
                 <Heading size="sm" mb={2}>
                   Choose a package
                 </Heading>
-                {!meals || meals.length === 0 ? (
+                {!packages || packages.length === 0 ? (
                   <Text fontSize="sm" color="gray.500">
                     No packages available for this site
                   </Text>
                 ) : (
                   <SimpleGrid minChildWidth="180px" spacing={3}>
-                    {meals.map((m, i) => (
-                      <MealCard
+                    {packages.map((m, i) => (
+                      <PackageCard
                         key={i}
-                        meal={m}
+                        pckg={m}
                         selected={
-                          selectedMeal?.id === m.id && !!m.id
+                          selectedPackage?.id === m.id && !!m.id
                             ? true
-                            : selectedMeal?.orders === m.orders
+                            : selectedPackage?.display_order === m.display_order
                         }
-                        onSelect={setSelectedMeal}
+                        onSelect={setSelectedPackage}
                       />
                     ))}
                   </SimpleGrid>
@@ -378,7 +352,7 @@ export default function CustomerPanels() {
                     colorScheme="purple"
                     onClick={handlePayAndUnlock}
                     isLoading={paying}
-                    isDisabled={!selectedCart || !selectedMeal}
+                    isDisabled={!selectedCart || !selectedPackage}
                   >
                     Pay & Unlock
                   </Button>

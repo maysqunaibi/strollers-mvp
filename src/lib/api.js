@@ -38,22 +38,20 @@ export function getSiteSlots(siteNo) {
   return request("GET", `/site/${encodeURIComponent(siteNo)}/slots`);
 }
 
-export function getSiteMeals(siteNo) {
-  if (!siteNo) throw new Error("siteNo required");
-  return request("GET", `/site/${encodeURIComponent(siteNo)}/meals`);
-}
+export async function getLocalPackages(siteNo, siteType = "SHOPPING_MALL") {
+  const q = new URLSearchParams();
+  if (siteNo) q.set("siteNo", siteNo);
+  if (siteType) q.set("siteType", siteType);
 
-export function getDefaultMeals(siteNo) {
-  if (!siteNo) throw new Error("siteNo required");
-  return request("GET", `/site/${encodeURIComponent(siteNo)}/default-meals`);
-}
+  const res = await request("GET", `/catalog/packages?${q.toString()}`);
 
-/**
- * Save (append/update) meals for a site.
- * @param {{siteNo: string, setMeals: Array<{setMealName:string, amount:number, coin:number, status?:'ENABLE'|'UNENABLE'}>, siteOrderType?:'LAUNCH'|'RECHARGE', type?:'SITE'|'ALL'|'COMMON'}} payload
- */
-export function saveMeals(payload) {
-  return request("POST", `/setMeal/save`, payload);
+  // Normalize shape: either {code,msg,data:[...]} OR directly [...]
+  if (Array.isArray(res)) return res;
+  if (res && Array.isArray(res.data)) {
+    console.log("thissss is the pckgs in front: ", res.data);
+    return res.data;
+  }
+  return []; // fallback
 }
 
 /* ----------------------------- Device APIs ----------------------------- */
@@ -176,13 +174,57 @@ export function unbindCarts({ cartNo }) {
   const list = Array.isArray(cartNo) ? cartNo : [cartNo].filter(Boolean);
   return request("POST", `/handcart/unbind`, { cartNo: list });
 }
+
+/* ------------------------------ Orders and Payments ------------------------------ */
+// Orders
+export function listOrders(limit = 50) {
+  return request("GET", `/orders/list?limit=${limit}`);
+}
+
+export const getOrder = (id) => request("GET", `/orders/${id}`);
+export const listActiveOrders = () => request("GET", `/orders/active`);
+export const markOrderReturned = (id, body = {}) =>
+  request("POST", `/orders/${id}/mark-returned`, body);
+export const cancelOrder = (id) => request("POST", `/orders/${id}/cancel`);
+
+// Payments
+export const listPayments = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return request("GET", `/payments${q ? "?" + q : ""}`);
+};
+export const getPayment = (id) => request("GET", `/payments/${id}`);
+
+export function confirmAndUnlock({
+  paymentId,
+  deviceNo,
+  cartNo,
+  cartIndex,
+  siteNo,
+  amountHalalas,
+}) {
+  console.log("[API] confirmAndUnlock payload:", {
+    paymentId,
+    deviceNo,
+    cartNo,
+    cartIndex,
+    siteNo,
+    amountHalalas,
+  });
+  return request("POST", "/payments/confirm-and-unlock", {
+    paymentId,
+    deviceNo,
+    cartNo,
+    cartIndex,
+    siteNo,
+    amountHalalas,
+  });
+}
+
 /* ------------------------------ Re-exports ------------------------------ */
 export default {
   API_BASE,
   getSiteSlots,
-  getSiteMeals,
-  getDefaultMeals,
-  saveMeals,
+  getLocalPackages,
   bindDevice,
   unbindDevice,
   getDeviceInfo,
@@ -197,4 +239,12 @@ export default {
   bindCarts,
   unlockCart,
   getCartList,
+  listOrders,
+  getOrder,
+  listActiveOrders,
+  markOrderReturned,
+  cancelOrder,
+  listPayments,
+  getPayment,
+  confirmAndUnlock,
 };

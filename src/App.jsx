@@ -46,9 +46,7 @@ import {
 // API layer
 import {
   getSiteSlots,
-  getSiteMeals,
-  getDefaultMeals,
-  saveMeals,
+  getLocalPackages,
   bindDevice,
   unbindDevice,
   getDeviceInfo,
@@ -65,6 +63,8 @@ import {
   unbindCarts,
 } from "./lib/api";
 import CustomerPanels from "./components/CustomerPanels";
+import OrdersPanel from "./components/OrdersPanel";
+import CustomerReturn from "./components/CustomerReturn";
 import freeLoc from "./assets/sublocation-free.webp";
 import registeredLoc from "./assets/sublocation-registered.webp";
 
@@ -156,25 +156,6 @@ function SlotCard({ s, selected, onClick }) {
   );
 }
 
-function MealPill({ m, onClick }) {
-  return (
-    <WrapItem>
-      <Tag
-        size="lg"
-        variant="subtle"
-        colorScheme="purple"
-        cursor="pointer"
-        onClick={() => onClick(String(m.coin))}
-        _hover={{ transform: "translateY(-2px)", shadow: "md" }}
-      >
-        <TagLabel>
-          {m.setMealName} · {m.amount}元 / {m.coin}币
-        </TagLabel>
-      </Tag>
-    </WrapItem>
-  );
-}
-
 function OperatorPanels() {
   const defaultSite = useMemo(
     () => new URLSearchParams(location.search).get("siteNo") || "",
@@ -185,7 +166,7 @@ function OperatorPanels() {
   const [orders, setOrders] = useState("");
   const [coinsPerTime, setCoinsPerTime] = useState("");
   const [slots, setSlots] = useState([]);
-  const [meals, setMeals] = useState([]);
+  const [packages, setPackages] = useState([]);
   const [carts, setCarts] = useState([]);
   const [unlockIndex, setUnlockIndex] = useState("");
   const [selectedCartNo, setSelectedCartNo] = useState("");
@@ -202,13 +183,13 @@ function OperatorPanels() {
   async function loadAvailability() {
     if (!siteNo) return toast({ status: "warning", title: "Enter siteNo" });
     try {
-      const [slotsRes, mealsRes] = await Promise.all([
+      const [slotsRes, pkgsRes] = await Promise.all([
         getSiteSlots(siteNo),
-        getSiteMeals(siteNo),
+        getLocalPackages(siteNo),
       ]);
       setSlots(slotsRes?.data || []);
-      setMeals(mealsRes?.data?.setMealList || []);
-      logJSON({ slotsRes, mealsRes });
+      setPackages(pkgsRes || []);
+      logJSON({ slotsRes, pkgsRes });
       toast({ status: "success", title: "Loaded" });
     } catch (e) {
       logJSON({ error: String(e) });
@@ -217,6 +198,8 @@ function OperatorPanels() {
   }
 
   async function handleBind() {
+    const coinNum = Number(prompt("Coin number to add?", "1") || "");
+    setCoinsPerTime(coinNum);
     if (!siteNo || !deviceNo || !orders || !coinsPerTime)
       return toast({ status: "warning", title: "Fill all fields" });
     try {
@@ -283,33 +266,12 @@ function OperatorPanels() {
     }
   }
 
-  async function handleDefaultMeals() {
+  async function handleDefaultPackages() {
     if (!siteNo) return toast({ status: "warning", title: "Enter siteNo" });
     try {
-      logJSON(await getDefaultMeals(siteNo));
+      logJSON(await getLocalPackages(siteNo));
     } catch (e) {
       logJSON({ error: String(e) });
-    }
-  }
-  async function handleSaveMeal() {
-    if (!siteNo) return toast({ status: "warning", title: "Enter siteNo" });
-    const setMealName = prompt("Set meal name?", "启动套餐(自定义)");
-    const amount = Number(prompt("Amount (元)?", "3") || "");
-    const coin = Number(prompt("Coins?", "3") || "");
-    if (!setMealName || !amount || !coin) return;
-    try {
-      const res = await saveMeals({
-        siteNo,
-        setMeals: [{ setMealName, amount, coin, status: "ENABLE" }],
-        siteOrderType: "LAUNCH",
-        type: "SITE",
-      });
-      logJSON(res);
-      await loadAvailability();
-      toast({ status: "success", title: "Meal saved" });
-    } catch (e) {
-      logJSON({ error: String(e) });
-      toast({ status: "error", title: "Save failed" });
     }
   }
 
@@ -518,10 +480,10 @@ function OperatorPanels() {
           active={open === "cart"}
         />
         <Tile
-          title="Set Meals"
+          title="Set Packages"
           icon={Package}
-          onClick={() => setOpen("meal")}
-          active={open === "meal"}
+          onClick={() => setOpen("package")}
+          active={open === "package"}
         />
         <Tile
           title="Sites CRUD"
@@ -529,6 +491,13 @@ function OperatorPanels() {
           onClick={() => setOpen("crud")}
           active={open === "crud"}
         />
+        <Tile
+          title="Orders"
+          icon={List}
+          onClick={() => setOpen("orders")}
+          active={open === "orders"}
+        />
+
         <Tile
           title="Console"
           icon={TerminalSquare}
@@ -576,9 +545,9 @@ function OperatorPanels() {
             <Button
               leftIcon={<Sparkles size={16} />}
               variant="outline"
-              onClick={handleDefaultMeals}
+              onClick={handleDefaultPackages}
             >
-              Default Meals
+              Default Packages
             </Button>
           </HStack>
 
@@ -625,14 +594,25 @@ function OperatorPanels() {
               <Heading size="sm" mb={2}>
                 Packages (LAUNCH)
               </Heading>
-              {meals.length === 0 ? (
+              {packages.length === 0 || !packages ? (
                 <Text fontSize="sm" color="gray.500">
                   No data
                 </Text>
               ) : (
                 <Wrap>
-                  {meals.map((m, i) => (
-                    <MealPill key={i} m={m} onClick={setCoinsPerTime} />
+                  {packages.map((p, i) => (
+                    <WrapItem key={i}>
+                      <Tag
+                        size="lg"
+                        variant="subtle"
+                        colorScheme={p.recommended ? "purple" : "gray"}
+                      >
+                        <TagLabel>
+                          {p.name} · {(p.amount_halalas / 100).toFixed(2)} SAR ·{" "}
+                          {p.duration_minutes} min
+                        </TagLabel>
+                      </Tag>
+                    </WrapItem>
                   ))}
                 </Wrap>
               )}
@@ -804,10 +784,11 @@ function OperatorPanels() {
           </CardBody>
         </Card>
       )}
-      {open === "meal" && (
+      {open === "orders" && <OrdersPanel />}
+      {open === "package" && (
         <Card variant="outline" rounded="2xl">
           <CardHeader>
-            <Heading size="md">Set Meal (套餐)</Heading>
+            <Heading size="md">Set Packages</Heading>
           </CardHeader>
           <CardBody>
             <HStack spacing={3} wrap="wrap">
@@ -821,15 +802,9 @@ function OperatorPanels() {
               <Button
                 leftIcon={<Sparkles size={16} />}
                 variant="outline"
-                onClick={handleDefaultMeals}
+                onClick={handleDefaultPackages}
               >
-                Default Meals
-              </Button>
-              <Button
-                leftIcon={<PlusCircle size={16} />}
-                onClick={handleSaveMeal}
-              >
-                Save Meal
+                Default Packages
               </Button>
             </HStack>
           </CardBody>
@@ -900,6 +875,9 @@ function OperatorPanels() {
 }
 
 export default function App() {
+  if (window.location.pathname === "/pay/return") {
+    return <CustomerReturn />;
+  }
   const [tab, setTab] = useState("operator");
   return (
     <Box
