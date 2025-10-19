@@ -1,13 +1,9 @@
-// src/lib/api.js
-// Thin client-side wrapper around your Node backend (/api/*)
-// so components don't deal with fetch details.
 
-// You can override API base with Vite env: VITE_API_BASE=http://localhost:4000/api
+
 export const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||
   "/api";
 
-/** Basic JSON fetch with better error reporting */
 async function toJSON(res) {
   const text = await res.text();
   try {
@@ -45,7 +41,6 @@ export async function getLocalPackages(siteNo, siteType = "SHOPPING_MALL") {
 
   const res = await request("GET", `/catalog/packages?${q.toString()}`);
 
-  // Normalize shape: either {code,msg,data:[...]} OR directly [...]
   if (Array.isArray(res)) return res;
   if (res && Array.isArray(res.data)) {
     console.log("thissss is the pckgs in front: ", res.data);
@@ -138,38 +133,25 @@ export function removeSite({ siteNo }) {
  * ---------------------------
  */
 
-/** Get carts (strollers) currently in a device (rack).
- * @param {Object} params
- * @param {string} params.deviceNo - e.g. "01007008"
- */
+// Get carts (strollers) currently in a device (rack).
 export function getCartList({ deviceNo }) {
   return request("POST", `/handcart/list`, { deviceNo });
 }
 
-/** Unlock a specific slot (cartIndex) on a device after payment.
- * @param {Object} params
- * @param {string} params.deviceNo
- * @param {number} params.cartIndex - slot index (1,2,3…)
- */
+// Unlock a specific slot (cartIndex) on a device after payment.
+
 export function unlockCart({ deviceNo, cartIndex, cartNo }) {
   return request("POST", `/handcart/unlock`, { deviceNo, cartIndex, cartNo });
 }
 
-/** Bind carts (IC card numbers) to this merchant (one-time association).
- * Accepts either a single string or an array.
- * @param {Object} params
- * @param {string|string[]} params.cartNo - IC card number(s)
- */
+// Bind carts (IC card numbers) to this merchant (one-time association).
+ 
 export function bindCarts({ cartNo }) {
-  // const list = Array.isArray(cartNos) ? cartNos : [cartNos].filter(Boolean);
   return request("POST", `/handcart/bind`, { cartNo });
 }
 
-/** Unbind carts from this merchant.
- * Accepts either a single string or an array.
- * @param {Object} params
- * @param {string|string[]} params.cartNo - IC card number(s)
- */
+// Unbind carts from this merchant.
+
 export function unbindCarts({ cartNo }) {
   const list = Array.isArray(cartNo) ? cartNo : [cartNo].filter(Boolean);
   return request("POST", `/handcart/unbind`, { cartNo: list });

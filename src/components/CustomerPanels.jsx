@@ -41,29 +41,6 @@ function useQueryParam(key) {
   );
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const s = document.createElement("script");
-    s.src = src;
-    s.async = true;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error("Script load error: " + src));
-    document.head.appendChild(s);
-  });
-}
-
-function loadCss(href) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`link[href="${href}"]`)) return resolve();
-    const l = document.createElement("link");
-    l.rel = "stylesheet";
-    l.href = href;
-    l.onload = resolve;
-    l.onerror = () => reject(new Error("CSS load error: " + href));
-    document.head.appendChild(l);
-  });
-}
 
 function CartCard({ cart, selected, onSelect }) {
   const available = cart.usedStatus && cart.cartNo; // has a cart & docked
@@ -176,7 +153,6 @@ export default function CustomerPanels() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceNo]);
   async function ensureMoyasarLoaded() {
-    // If already present, done
     if (window.Moyasar && typeof window.Moyasar.init === "function") return;
 
     // Add CSS once
@@ -204,7 +180,6 @@ export default function CustomerPanels() {
       });
     }
 
-    // final guard
     if (!window.Moyasar || typeof window.Moyasar.init !== "function") {
       throw new Error("Moyasar failed to initialize");
     }
@@ -382,7 +357,6 @@ export default function CustomerPanels() {
           <ModalHeader>Secure Payment</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            {/* Moyasar mounts its form inside this element */}
             <div className="mysr-form"></div>
           </ModalBody>
         </ModalContent>

@@ -19,7 +19,7 @@ export default function CustomerReturn() {
   const didConfirmRef = useRef(false);
 
   useEffect(() => {
-    if (didConfirmRef.current) return; // guard
+    if (didConfirmRef.current) return; 
     async function run() {
       try {
         console.log("[RETURN] page boot");

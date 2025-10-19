@@ -1,5 +1,4 @@
-// src/App.jsx
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -355,7 +354,6 @@ function OperatorPanels() {
     if (!deviceNo)
       return toast({ status: "warning", title: "Device required" });
 
-    // Try to resolve both fields from selection
     const byIndex = carts.find((c) => String(c.index) === String(unlockIndex));
     const cartNo = selectedCartNo || byIndex?.cartNo || "";
     const cartIndexNum = Number(unlockIndex);
@@ -461,7 +459,7 @@ function OperatorPanels() {
     }
   }
 
-  const [open, setOpen] = useState("site"); // which detail card to show
+  const [open, setOpen] = useState("site"); 
 
   return (
     <VStack align="stretch" spacing={5}>
@@ -666,7 +664,6 @@ function OperatorPanels() {
             <Heading size="md">Cart Operations</Heading>
           </CardHeader>
           <CardBody>
-            {/* Device input (reuses your Site Overview Device No field) */}
             <HStack spacing={3} mb={4}>
               <Button
                 leftIcon={<List size={16} />}
@@ -713,7 +710,6 @@ function OperatorPanels() {
               )}
             </Box>
 
-            {/* Unlock test */}
             <Box borderWidth="1px" rounded="xl" p={3} mb={5}>
               <Heading size="sm" mb={3}>
                 Unlock (manual)
